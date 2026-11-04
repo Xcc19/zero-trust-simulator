@@ -16,8 +16,6 @@
 1. Clone or download `index.html` from this repository.
 2. Double-click `index.html` to open it in any modern web browser (Chrome, Edge, Safari).
 
----
-
 <a name="chinese"></a>
 ## 🇨🇳 中文说明
 
@@ -36,16 +34,12 @@
 1. 下载本仓库中的 `index.html` 文件。
 2. 直接在本地双击 `index.html`，使用任意主流浏览器打开即可体验。
 
----
 
 ## 🛠️ Architecture & Core Concepts / 核心设计原理
 
 | Defense Mechanism / 防御机制 | Technical Concept / 技术原理 | Target Scenario / 应对场景 |
-| :--- | :--- | :--- |
+
 | **Hardware MPC Key** | Disallows non-HSM API automated execution | Unauthorized Large Transfer / 大额越权划转 |
 | **Formal Policy Sandbox** | Mathematical invariant checks on AI/API commands | Rogue AI & Prompt Injection / 违规指令 |
 | **Dynamic Rate Limiter** | Global net outflux velocity monitoring & freeze | High-Freq Micro-Withdrawal / 蚂蚁搬家刷单 |
 | **WORM Audit Chain** | Write Once Read Many cryptographic hash log stream | Evidence Tampering & Wipe / Log 抹除与销毁 |
-
----
-*Created for Zero-Trust Defense Research & Interactive Portfolio Demonstration.*
