@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>零信任金融协议攻防演练模拟器 / Zero-Trust Defense Simulator</title>
+  <!-- 引入 Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- 引入 React & ReactDOM CDN -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <!-- 引入 Babel 编译器 -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- 引入 Lucide Icons 图标库 -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    body { background-color: #0b0f19; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    .glass-card { background: rgba(17, 24, 39, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); }
+    .glow-red { box-shadow: 0 0 20px rgba(239, 68, 68, 0.35); }
+    .glow-green { box-shadow: 0 0 20px rgba(34, 197, 94, 0.35); }
+    .glow-blue { box-shadow: 0 0 20px rgba(59, 130, 246, 0.35); }
+  </style>
+</head>
+<body class="min-h-screen p-4 md:p-8">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    function ZeroTrustSimulator() {
+      const [lang, setLang] = useState('zh'); 
+
+      const [defenses, setDefenses] = useState({
+        hardwareKey: true,    
+        policySandbox: true,  
+        rateLimiter: true,    
+        wormAudit: true       
+      });
+
+      // 新增：0-day 漏洞风险概率系数 (0% - 30%)
+      const [riskFactor, setRiskFactor] = useState(10);
+
+      const [simulating, setSimulating] = useState(false);
+      const [activeStep, setActiveStep] = useState(0);
+      const [attackType, setAttackType] = useState('unauthorized_withdrawal');
+      
+      const [metrics, setMetrics] = useState({
+        compromiseSeverity: 0, 
+        systemHealth: 100,     
+        blockedAttacks: 0,     
+        bypassedCount: 0,      
+        financialLoss: 0       
+      });
+
+      const [logs, setLogs] = useState([]);
+      
+      // 新增：事故报告弹窗状态
+      const [showReportModal, setShowReportModal] = useState(false);
+      const [lastResult, setLastResult] = useState(null); // 'blocked' or 'breached'
+
+      const attackScenarios = {
+        unauthorized_withdrawal: {
+          title: lang === 'zh' ? '场景 A：被盗终端发起大额越权提现' : 'Scenario A: Single Large Unauthorized Withdrawal',
+          desc: lang === 'zh' ? '黑客利用已控工程师电脑，尝试直接调用出金 API 提现 50,000,000 USD。' : 'Hacker leverages compromised admin terminal to trigger $50M withdrawal directly.',
+          steps: [
+            { id: 'node_term', name: lang === 'zh' ? '工程师终端 (受控)' : 'Compromised Dev Terminal', status: 'attack' },
+            { id: 'node_ai', name: lang === 'zh' ? '内部 AI 代理 / 接口' : 'Internal AI Agent / API', status: 'compromised' },
+            { id: 'node_sandbox', name: lang === 'zh' ? '策略引擎沙箱' : 'Formal Verification Sandbox', req: 'policySandbox' },
+            { id: 'node_mpc', name: lang === 'zh' ? 'MPC 硬件密钥校验' : 'Hardware Key & MPC Multi-Sig', req: 'hardwareKey' },
+            { id: 'node_audit', name: lang === 'zh' ? 'WORM 防篡改审计' : 'WORM Audit Engine', req: 'wormAudit' },
+            { id: 'node_vault', name: lang === 'zh' ? '核心资金池' : 'Hot Ledger / Vault', status: 'target' }
+          ]
+        },
+        smurf_attack: {
+          title: lang === 'zh' ? '场景 B：高频“蚂蚁搬家”式极小额刷单' : 'Scenario B: High-Frequency Smurf Attack (Rate Bypass)',
+          desc: lang === 'zh' ? '黑客通过 AI 编写自动化脚本，在 1 秒内发起 10,000 笔单笔低于预警线的小额转账。' : 'Hacker launches 10,000 micro-withdrawals in 1s to bypass single-tx limit.',
+          steps: [
+            { id: 'node_term', name: lang === 'zh' ? '黑客自动化脚本' : 'Automated Bot Script', status: 'attack' },
+            { id: 'node_ai', name: lang === 'zh' ? '高频 API 接口' : 'High-Freq API Gateway', status: 'compromised' },
+            { id: 'node_rate', name: lang === 'zh' ? '动态流速熔断器' : 'Dynamic Rate Limiter', req: 'rateLimiter' },
+            { id: 'node_sandbox', name: lang === 'zh' ? '策略规则校验' : 'Policy Engine Sandbox', req: 'policySandbox' },
+            { id: 'node_audit', name: lang === 'zh' ? 'WORM 审计链' : 'WORM Audit Engine', req: 'wormAudit' },
+            { id: 'node_vault', name: lang === 'zh' ? '核心资金池' : 'Hot Ledger / Vault', status: 'target' }
+          ]
+        },
+        log_tampering: {
+          title: lang === 'zh' ? '场景 C：越权转移资金并擦除痕迹' : 'Scenario C: Audit Log Erasure & Evidence Tampering',
+          desc: lang === 'zh' ? '黑客获取 Root 运维权限后，在提现的同时试图删除系统日志和数据库备份。' : 'Hacker executes unauthorized transfer and attempts to rm -rf audit logs.',
+          steps: [
+            { id: 'node_term', name: lang === 'zh' ? 'Root 运维终端' : 'Compromised Root Terminal', status: 'attack' },
+            { id: 'node_ai', name: lang === 'zh' ? '系统日志服务' : 'Log Management Service', status: 'compromised' },
+            { id: 'node_audit', name: lang === 'zh' ? 'WORM 密码学审计链' : 'WORM Cryptographic Log Chain', req: 'wormAudit' },
+            { id: 'node_vault', name: lang === 'zh' ? '核心资金池' : 'Hot Ledger / Vault', status: 'target' }
+          ]
+        }
+      };
+
+      const toggleDefense = (key) => {
+        setDefenses(prev => ({ ...prev, [key]: !prev[key] }));
+      };
+
+      const addLog = (msg, type = 'info') => {
+        const time = new Date().toLocaleTimeString();
+        setLogs(prev => [{ time, msg, type }, ...prev.slice(0, 19)]);
+      };
+
+      // 一键自动修补功能
+      const handleAutoPatch = () => {
+        setDefenses({
+          hardwareKey: true,
+          policySandbox: true,
+          rateLimiter: true,
+          wormAudit: true
+        });
+        setMetrics(m => ({ ...m, systemHealth: 100, compromiseSeverity: 0 }));
+        setShowReportModal(false);
+        addLog(lang === 'zh' ? '🛠️ [自动修补] 系统已一键恢复全部零信任核心安全策略！' : '🛠️ [Auto-Patch] All zero-trust defense rules restored automatically!', 'success');
+      };
+
+      const runSimulation = async () => {
+        setSimulating(true);
+        setActiveStep(0);
+        setShowReportModal(false);
+        const scenario = attackScenarios[attackType];
+        addLog(lang === 'zh' ? `🚀 开始演练: ${scenario.title}` : `🚀 Simulation Started: ${scenario.title}`, 'info');
+
+        let isBlocked = false;
+
+        for (let i = 0; i < scenario.steps.length; i++) {
+          setActiveStep(i);
+          const step = scenario.steps[i];
+          await new Promise(r => setTimeout(r, 900));
+
+          if (step.req && defenses[step.req]) {
+            // 加入 0-day 概率随机绕过判断
+            const bypassRandomRoll = Math.random() * 100 < riskFactor;
+            if (bypassRandomRoll) {
+              addLog(
+                lang === 'zh' 
+                  ? `⚡ [风险预警] 黑客利用未知的 0-day 漏洞概率性穿透了「${step.name}」！` 
+                  : `⚡ [0-Day Risk] Hacker leveraged unknown vulnerability to slip past [${step.name}]!`,
+                'warning'
+              );
+              continue; // 继续向下穿透
+            }
+
+            isBlocked = true;
+            addLog(
+              lang === 'zh' 
+                ? `🛡️ [成功拦截] 机制「${step.name}」成功阻止攻击！` 
+                : `🛡️ [INTERCEPTED] Defense layer [${step.name}] blocked the exploit!`,
+              'success'
+            );
+            setMetrics(m => ({
+              ...m,
+              blockedAttacks: m.blockedAttacks + 1,
+              systemHealth: Math.min(100, m.systemHealth + 5)
+            }));
+            break;
+          } else if (step.req && !defenses[step.req]) {
+            addLog(
+              lang === 'zh' 
+                ? `⚠️ [防御缺失] 机制「${step.name}」未开启，攻击顺利穿透！` 
+                : `⚠️ [BYPASSED] Defense [${step.name}] is DISABLED!`,
+              'warning'
+            );
+          }
+        }
+
+        if (!isBlocked) {
+          addLog(
+            lang === 'zh' 
+              ? `💥 [安全惨案] 攻击成功突破全部防线！资金遭受劫掠！` 
+              : `💥 [BREACH CRITICAL] Attack completely bypassed defenses!`,
+            'danger'
+          );
+          setMetrics(m => ({
+            ...m,
+            compromiseSeverity: Math.min(100, m.compromiseSeverity + 40),
+            systemHealth: Math.max(0, m.systemHealth - 35),
+            bypassedCount: m.bypassedCount + 1,
+            financialLoss: m.financialLoss + (attackType === 'unauthorized_withdrawal' ? 50000000 : 12500000)
+          }));
+          setLastResult('breached');
+        } else {
+          setLastResult('blocked');
+        }
+
+        setSimulating(false);
+        // 演练结束后自动弹出事故/演练报告
+        setShowReportModal(true);
+      };
+
+      return (
+        <div class="max-w-7xl mx-auto space-y-6 relative">
+          {/* Header Bar */}
+          <div class="glass-card rounded-2xl p-6 flex flex-col md:flex-row justify-between items-center gap-4">
+            <div>
+              <h1 class="text-2xl font-bold text-white flex items-center gap-3">
+                <span>🛡️</span>
+                {lang === 'zh' ? '零信任金融协议攻防演练模拟器' : 'Zero-Trust Protocol Defense Simulator'}
+              </h1>
+              <p class="text-sm text-gray-400 mt-1">
+                {lang === 'zh' ? '集成 0-day 风险变量与事故根因自动化报告的演练系统' : 'Enhanced with probabilistic risk vectors and automated post-mortem reporting.'}
+              </p>
+            </div>
+            
+            <button 
+              onClick={() => setLang(l => l === 'zh' ? 'en' : 'zh')}
+              class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm font-semibold transition"
+            >
+              🌐 {lang === 'zh' ? 'Switch to English' : '切换为中文'}
+            </button>
+          </div>
+
+          {/* Core Grid Layout */}
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            {/* Left Control Column */}
+            <div class="space-y-6">
+              {/* Defense Controls */}
+              <div class="glass-card rounded-2xl p-6 space-y-4">
+                <h2 class="text-lg font-semibold text-gray-200 border-b border-gray-700 pb-2">
+                  {lang === 'zh' ? '1. 安全防范策略 (Protocol 规则)' : '1. Protocol Defense Rules'}
+                </h2>
+                
+                <div class="space-y-3">
+                  <label class="flex items-center justify-between p-3 rounded-xl bg-gray-800/60 hover:bg-gray-800 cursor-pointer">
+                    <div>
+                      <div class="font-medium text-sm text-gray-200">{lang === 'zh' ? '🔑 硬件 MPC 多方私钥签名' : '🔑 Hardware Key & MPC Sign'}</div>
+                    </div>
+                    <input type="checkbox" checked={defenses.hardwareKey} onChange={() => toggleDefense('hardwareKey')} class="w-5 h-5 accent-indigo-500" />
+                  </label>
+
+                  <label class="flex items-center justify-between p-3 rounded-xl bg-gray-800/60 hover:bg-gray-800 cursor-pointer">
+                    <div>
+                      <div class="font-medium text-sm text-gray-200">{lang === 'zh' ? '🧪 形式化验证与策略沙箱' : '🧪 Formal Policy Sandbox'}</div>
+                    </div>
+                    <input type="checkbox" checked={defenses.policySandbox} onChange={() => toggleDefense('policySandbox')} class="w-5 h-5 accent-indigo-500" />
+                  </label>
+
+                  <label class="flex items-center justify-between p-3 rounded-xl bg-gray-800/60 hover:bg-gray-800 cursor-pointer">
+                    <div>
+                      <div class="font-medium text-sm text-gray-200">{lang === 'zh' ? '⚡ 动态流速熔断机制' : '⚡ Dynamic Rate Limit'}</div>
+                    </div>
+                    <input type="checkbox" checked={defenses.rateLimiter} onChange={() => toggleDefense('rateLimiter')} class="w-5 h-5 accent-indigo-500" />
+                  </label>
+
+                  <label class="flex items-center justify-between p-3 rounded-xl bg-gray-800/60 hover:bg-gray-800 cursor-pointer">
+                    <div>
+                      <div class="font-medium text-sm text-gray-200">{lang === 'zh' ? '📜 WORM 防篡改日志链' : '📜 WORM Audit Trail'}</div>
+                    </div>
+                    <input type="checkbox" checked={defenses.wormAudit} onChange={() => toggleDefense('wormAudit')} class="w-5 h-5 accent-indigo-500" />
+                  </label>
+                </div>
+
+                {/* 新增：0-day 风险概率滑块 */}
+                <div class="pt-3 border-t border-gray-700 space-y-2">
+                  <div class="flex justify-between text-xs text-gray-300">
+                    <span>{lang === 'zh' ? '⚡ 0-day 漏洞概率风险系数:' : '⚡ 0-Day Vulnerability Factor:'}</span>
+                    <span class="font-bold text-yellow-400">{riskFactor}%</span>
+                  </div>
+                  <input 
+                    type="range" min="0" max="30" value={riskFactor} 
+                    onChange={(e) => setRiskFactor(Number(e.target.value))}
+                    class="w-full accent-yellow-500 cursor-pointer"
+                  />
+                  <div class="text-[10px] text-gray-500">
+                    {lang === 'zh' ? '模拟高级黑客利用未知漏洞绕过防御的概率' : 'Simulates probability of bypassing defenses via 0-day bugs'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Scenario Trigger */}
+              <div class="glass-card rounded-2xl p-6 space-y-4">
+                <h2 class="text-lg font-semibold text-gray-200 border-b border-gray-700 pb-2">
+                  {lang === 'zh' ? '2. 选择攻击模拟向量' : '2. Select Attack Scenario'}
+                </h2>
+                
+                <select 
+                  value={attackType} 
+                  onChange={(e) => setAttackType(e.target.value)}
+                  class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-sm text-gray-200 focus:outline-none focus:border-indigo-500"
+                >
+                  <option value="unauthorized_withdrawal">{attackScenarios.unauthorized_withdrawal.title}</option>
+                  <option value="smurf_attack">{attackScenarios.smurf_attack.title}</option>
+                  <option value="log_tampering">{attackScenarios.log_tampering.title}</option>
+                </select>
+
+                <p class="text-xs text-gray-400 p-3 bg-gray-900/50 rounded-lg">
+                  {attackScenarios[attackType].desc}
+                </p>
+
+                <button 
+                  onClick={runSimulation}
+                  disabled={simulating}
+                  class={`w-full py-3 rounded-xl font-bold text-white shadow-lg transition ${
+                    simulating ? 'bg-gray-700 cursor-not-allowed' : 'bg-red-600 hover:bg-red-500 glow-red'
+                  }`}
+                >
+                  {simulating 
+                    ? (lang === 'zh' ? '⏳ 模拟渗透演练中...' : '⏳ Executing Attack Pipeline...') 
+                    : (lang === 'zh' ? '⚔️ 发起攻击演练 (Launch Attack)' : '⚔️ Execute Attack Simulation')}
+                </button>
+              </div>
+            </div>
+
+            {/* Right Topology and Telemetry Column */}
+            <div class="lg:col-span-2 space-y-6">
+              
+              {/* Telemetry Dashboard */}
+              <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div class="glass-card rounded-2xl p-4 text-center">
+                  <div class="text-xs text-gray-400">{lang === 'zh' ? '协议安全评分' : 'Protocol Health'}</div>
+                  <div class={`text-2xl font-bold mt-1 ${metrics.systemHealth > 70 ? 'text-green-400' : 'text-yellow-400'}`}>
+                    {metrics.systemHealth}%
+                  </div>
+                </div>
+
+                <div class="glass-card rounded-2xl p-4 text-center">
+                  <div class="text-xs text-gray-400">{lang === 'zh' ? '失陷系统严重点' : 'Compromise Level'}</div>
+                  <div class={`text-2xl font-bold mt-1 ${metrics.compromiseSeverity > 30 ? 'text-red-400' : 'text-blue-400'}`}>
+                    {metrics.compromiseSeverity}%
+                  </div>
+                </div>
+
+                <div class="glass-card rounded-2xl p-4 text-center">
+                  <div class="text-xs text-gray-400">{lang === 'zh' ? '拦截 / 穿透次数' : 'Blocked / Bypassed'}</div>
+                  <div class="text-2xl font-bold mt-1 text-white">
+                    <span class="text-green-400">{metrics.blockedAttacks}</span> / <span class="text-red-400">{metrics.bypassedCount}</span>
+                  </div>
+                </div>
+
+                <div class="glass-card rounded-2xl p-4 text-center">
+                  <div class="text-xs text-gray-400">{lang === 'zh' ? '模拟造成资损' : 'Total Loss'}</div>
+                  <div class="text-2xl font-bold mt-1 text-red-400">
+                    ${(metrics.financialLoss / 1000000).toFixed(1)}M
+                  </div>
+                </div>
+              </div>
+
+              {/* Topology Node Pipeline */}
+              <div class="glass-card rounded-2xl p-6 space-y-4">
+                <h2 class="text-lg font-semibold text-gray-200 border-b border-gray-700 pb-2">
+                  {lang === 'zh' ? '3. 零信任协议节点拦截拓扑图' : '3. Zero-Trust Pipeline Topology'}
+                </h2>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                  {attackScenarios[attackType].steps.map((step, idx) => {
+                    const isActive = activeStep === idx && simulating;
+                    const isPassed = activeStep > idx;
+                    const isBlockedNode = step.req && defenses[step.req] && activeStep === idx;
+
+                    let borderColor = 'border-gray-700';
+                    let bgColor = 'bg-gray-800/40';
+
+                    if (isActive) {
+                      borderColor = isBlockedNode ? 'border-green-500 glow-green' : 'border-red-500 glow-red';
+                      bgColor = isBlockedNode ? 'bg-green-950/40' : 'bg-red-950/40';
+                    } else if (isPassed) {
+                      borderColor = 'border-indigo-500/50';
+                    }
+
+                    return (
+                      <div 
+                        key={idx} 
+                        class={`p-4 rounded-xl border ${borderColor} ${bgColor} transition-all relative overflow-hidden`}
+                      >
+                        <div class="flex justify-between items-start mb-2">
+                          <span class="text-xs font-mono px-2 py-0.5 rounded bg-gray-900 text-gray-400">
+                            STEP 0{idx + 1}
+                          </span>
+                          {step.req && (
+                            <span class={`text-xs px-2 py-0.5 rounded ${defenses[step.req] ? 'bg-green-900/60 text-green-300' : 'bg-red-900/60 text-red-300'}`}>
+                              {defenses[step.req] ? 'ACTIVE' : 'DISABLED'}
+                            </span>
+                          )}
+                        </div>
+
+                        <div class="font-semibold text-sm text-gray-200 mt-1">{step.name}</div>
+                        
+                        <div class="text-xs text-gray-500 mt-2">
+                          {isActive 
+                            ? (isBlockedNode ? '⛔ 触发拦截！' : '⚠️ 穿透中...') 
+                            : (isPassed ? '✅ 已过境' : '⏳ 待检验')
+                          }
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Console Real-time Logs */}
+              <div class="glass-card rounded-2xl p-6 space-y-3">
+                <h2 class="text-lg font-semibold text-gray-200 border-b border-gray-700 pb-2">
+                  {lang === 'zh' ? '4. 攻防审计与追踪日志' : '4. Audit Telemetry Console'}
+                </h2>
+
+                <div class="h-40 overflow-y-auto bg-black/60 rounded-xl p-4 font-mono text-xs space-y-2 border border-gray-800">
+                  {logs.length === 0 && (
+                    <div class="text-gray-600 italic">
+                      {lang === 'zh' ? '> 系统就绪，请点击“发起攻击演练”...' : '> System ready. Click "Execute Attack Simulation"...'}
+                    </div>
+                  )}
+                  {logs.map((item, idx) => (
+                    <div key={idx} class="flex gap-2">
+                      <span class="text-gray-500">[{item.time}]</span>
+                      <span class={
+                        item.type === 'danger' ? 'text-red-400 font-bold' :
+                        item.type === 'success' ? 'text-green-400 font-bold' :
+                        item.type === 'warning' ? 'text-yellow-400' : 'text-gray-300'
+                      }>
+                        {item.msg}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+            </div>
+
+          </div>
+
+          {/* 新增：演练结束后的事故根因报告弹窗 (Incident Report Modal) */}
+          {showReportModal && (
+            <div class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+              <div class="glass-card bg-gray-900/90 border border-gray-700 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in">
+                <div class="flex justify-between items-center border-b border-gray-800 pb-3">
+                  <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                    {lastResult === 'blocked' ? '🛡️ 演练总结：防御成功阻断' : '🚨 事故报告：协议遭遇严重失陷'}
+                  </h3>
+                  <button onClick={() => setShowReportModal(false)} class="text-gray-400 hover:text-white">✕</button>
+                </div>
+
+                <div class="space-y-3 text-sm text-gray-300">
+                  <p>
+                    {lastResult === 'blocked' 
+                      ? (lang === 'zh' ? '本次演练中，零信任协议的多层策略网关成功将恶意攻击拦截在核心资产池外，未造成财务损失。' : 'All exploit attempts were successfully intercepted by active zero-trust policy gates.')
+                      : (lang === 'zh' ? '警告：由于关键防线缺失或遭遇 0-day 风险突破，攻击者成功触达核心资金池，造成了资金劫掠与审计盲区。' : 'Critical breach detected. Assets were drained due to disabled defenses or 0-day slip-through.')
+                    }
+                  </p>
+
+                  <div class="p-3 bg-black/40 rounded-xl space-y-1 font-mono text-xs">
+                    <div class="text-gray-400">📊 {lang === 'zh' ? '演练状态指标：' : 'Metrics Snapshot:'}</div>
+                    <div class="text-indigo-300">• {lang === 'zh' ? '当前系统健康度：' : 'System Health: '}{metrics.systemHealth}%</div>
+                    <div class="text-red-400">• {lang === 'zh' ? '累计经济资损：' : 'Total Financial Loss: '}${(metrics.financialLoss / 1000000).toFixed(1)}M</div>
+                  </div>
+                </div>
+
+                <div class="flex gap-3 pt-2">
+                  <button 
+                    onClick={handleAutoPatch}
+                    class="flex-1 py-2.5 bg-green-600 hover:bg-green-500 rounded-xl font-bold text-white text-sm transition shadow-lg"
+                  >
+                    {lang === 'zh' ? '🛠️ 一键自动修补所有策略' : '🛠️ Auto-Patch All Defenses'}
+                  </button>
+                  <button 
+                    onClick={() => setShowReportModal(false)}
+                    class="px-4 py-2.5 bg-gray-800 hover:bg-gray-700 rounded-xl font-semibold text-gray-300 text-sm transition"
+                  >
+                    {lang === 'zh' ? '关闭报告' : 'Close'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<ZeroTrustSimulator />);
+  </script>
+</body>
+</html>
