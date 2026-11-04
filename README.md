@@ -15,7 +15,6 @@
 ### 🚀 Quick Start
 1. Clone or download `index.html` from this repository.
 2. Double-click `index.html` to open it in any modern web browser (Chrome, Edge, Safari).
-3. Live Demo: `https://<YOUR-USERNAME>.github.io/<YOUR-REPO-NAME>/` *(Replace with your link)*
 
 ---
 
