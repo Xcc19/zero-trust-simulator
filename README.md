@@ -1,10 +1,4 @@
 # 🛡️ Zero-Trust Protocol Defense Simulator / 零信任金融协议攻防演练模拟器
-
-[English](#english) | [中文说明](#chinese)
-
----
-
-<a name="english"></a>
 ## 🌐 English Description
 
 ### Overview
@@ -42,7 +36,6 @@
 ### 🚀 快速开始
 1. 下载本仓库中的 `index.html` 文件。
 2. 直接在本地双击 `index.html`，使用任意主流浏览器打开即可体验。
-3. 在线演练 Demo 地址：`https://<YOUR-USERNAME>.github.io/<YOUR-REPO-NAME>/` *(请替换为您开启 GitHub Pages 后的链接)*
 
 ---
 
